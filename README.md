@@ -15,20 +15,27 @@
 ## 快速开始
 
 ```bash
+# 后端
 python -m venv .venv
 .venv/Scripts/pip install -r requirements-dev.txt   # Windows
 # cp .env.example .env 并填写；必配：
 #   HUTU_LLM_ENCRYPTION_KEY（python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"）
 #   HUTU_LLM_* 三项（真实模型）；无 Key 演示设 HUTU_LLM_FAKE=1
 
-.venv/Scripts/python -m uvicorn app.main:app --reload --port 8900
+# 前端（Vue 3 + Vite，首次需 Node 20+）
+cd web
+npm install          # 内网环境先 npm config set registry https://registry.npmmirror.com
+npm run build        # 产物 dist/ 由 FastAPI 托管；开发模式用 npm run dev（5173 代理到 8900）
+
+# 启动
+.venv/Scripts/python -m uvicorn app.main:app --reload --port 8900   # 项目根目录执行
 ```
 
-浏览器打开 **http://127.0.0.1:8900/** —— 顶部 4 个 tab：对话 / Agent 管理 / Skill 管理 / LLM 配置。
+浏览器打开 **http://127.0.0.1:8900/**（hash 路由 `/#/chat`）—— 对话 / Agent 管理 / Skill 管理 / LLM 配置。
 
-**推荐体验路径**：LLM 配置页建配置 → Skill 管理页上传 SKILL.md → Agent 管理页建 Agent 并绑定两者 → 对话页新建会话选该 Agent → 提问触发技能工具调用。
+**推荐体验路径**：LLM 配置页建配置 → Skill 管理页上传 SKILL.md（可附 handler.py 提供真实数据源）→ Agent 管理页建 Agent 并绑定两者 → 对话页新建会话选该 Agent → 提问即可看到**工具调用卡片**（转圈 → 耗时 → 可展开输入/输出），历史消息同样回显。
 
-### SKILL.md 格式
+### SKILL.md + handler 格式
 
 ```markdown
 ---
@@ -40,6 +47,8 @@ files:                  # 可选附属文件，随正文一起存储
 ---
 技能正文（作为执行该技能的子 Agent 的 system_prompt）
 ```
+
+可选 `handler.py`（与 SKILL.md 一起上传）：提供 `run(task, context) -> str`，工具执行时**先在主进程运行它获取真实数据**（context 含 `task`、`now`），再把数据注入子 Agent 生成回复。示例见 time_teller 技能。
 
 技能文件存储在 `{HUTU_SKILL_DATA_DIR}/skills/{skill_id}/v{version}/`（与概设 OSS 路径规则一致，后续切 OSS 只改 skill_service 落盘/读盘两处）。
 
