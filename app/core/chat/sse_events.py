@@ -1,6 +1,6 @@
-"""SSE v3 事件模型（MVP 子集：msg_start / delta / usage / error / cancelled / msg_end）。
+"""SSE v3 事件模型（msg_start / delta / tool_call_* / usage / error / cancelled / msg_end）。
 
-与概设《Chat_SSE_前端接口文档》对齐；后续扩展 intent/suggestions/references/action/tool_call_* 等。
+与概设《Chat_SSE_前端接口文档》对齐；后续扩展 intent/suggestions/references/action 等。
 """
 from typing import Literal
 
@@ -15,6 +15,22 @@ class MsgStartEvent(BaseModel):
 class DeltaEvent(BaseModel):
     type: Literal["delta"] = "delta"
     content: str
+
+
+class ToolCallStartEvent(BaseModel):
+    type: Literal["tool_call_start"] = "tool_call_start"
+    run_id: str  # LangGraph run_id，前后端配对键（同轮可能多次调工具）
+    name: str  # 技能名 = tool name
+    args_json: str = ""  # 工具入参 JSON 字符串（服务端截断 2000）
+
+
+class ToolCallEndEvent(BaseModel):
+    type: Literal["tool_call_end"] = "tool_call_end"
+    run_id: str
+    name: str
+    duration_ms: int = 0
+    output_preview: str = ""  # 截断 500 字符
+    status: str = "ok"  # ok / error
 
 
 class UsageEvent(BaseModel):
@@ -39,5 +55,12 @@ class MsgEndEvent(BaseModel):
 
 
 SSEEvent = (
-    MsgStartEvent | DeltaEvent | UsageEvent | CancelledEvent | ErrorEvent | MsgEndEvent
+    MsgStartEvent
+    | DeltaEvent
+    | ToolCallStartEvent
+    | ToolCallEndEvent
+    | UsageEvent
+    | CancelledEvent
+    | ErrorEvent
+    | MsgEndEvent
 )

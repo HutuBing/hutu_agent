@@ -2,6 +2,8 @@
 
 run_chat_turn 只产出 Pydantic 事件，不关心协议编码；调用方（SSE / 未来飞书）负责序列化。
 """
+import json
+import time
 import uuid
 from collections.abc import AsyncIterator
 
@@ -16,8 +18,17 @@ from app.core.chat.sse_events import (
     MsgEndEvent,
     MsgStartEvent,
     SSEEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
     UsageEvent,
 )
+
+ARGS_MAX = 2000  # 工具入参截断上限
+OUTPUT_MAX = 500  # 工具输出预览截断上限
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
 
 
 def _build_fake_stream(text: str) -> AsyncIterator[str]:
@@ -80,31 +91,67 @@ async def run_chat_turn(
                 names = ", ".join(agent_ctx.skipped_skills)
                 yield DeltaEvent(content=f"（提示：绑定技能 {names} 的文件读取失败，本轮未注入为工具）\n\n")
 
-            # 4. 流式消费：on_chat_model_stream 捕获 token，on_chat_model_end 捕获 usage
+            # 4. 流式消费：模型 token / 工具调用 / usage 统一转成抽象事件
             prompt_tokens = completion_tokens = 0
             delta_count = 0
-            async for ev in agent.astream_events(
-                {"messages": messages},
-                version="v2",
-                config={"recursion_limit": settings.agent_recursion_limit},
-            ):
-                if request_disconnected is not None and await request_disconnected():
-                    yield CancelledEvent()
-                    yield MsgEndEvent()
-                    return
-                kind = ev.get("event")
-                if kind == "on_chat_model_stream":
-                    chunk = ev["data"]["chunk"]
-                    text = chunk.text() if hasattr(chunk, "text") else str(chunk.content)
-                    if text:
-                        delta_count += 1
-                        yield DeltaEvent(content=text)
-                elif kind == "on_chat_model_end":
-                    out = ev["data"].get("output")
-                    um = getattr(out, "usage_metadata", None)
-                    if um:
-                        prompt_tokens = um.get("input_tokens", 0)
-                        completion_tokens = um.get("output_tokens", 0)
+            tool_started_at: dict[str, float] = {}  # run_id -> monotonic 起点
+            try:
+                async for ev in agent.astream_events(
+                    {"messages": messages},
+                    version="v2",
+                    config={"recursion_limit": settings.agent_recursion_limit},
+                ):
+                    if request_disconnected is not None and await request_disconnected():
+                        yield CancelledEvent()
+                        yield MsgEndEvent()
+                        return
+                    kind = ev.get("event")
+                    if kind == "on_chat_model_stream":
+                        chunk = ev["data"]["chunk"]
+                        text = chunk.text() if hasattr(chunk, "text") else str(chunk.content)
+                        if text:
+                            delta_count += 1
+                            yield DeltaEvent(content=text)
+                    elif kind == "on_chat_model_end":
+                        out = ev["data"].get("output")
+                        um = getattr(out, "usage_metadata", None)
+                        if um:  # ReAct 多轮模型调用，累加而非覆盖
+                            prompt_tokens += um.get("input_tokens", 0)
+                            completion_tokens += um.get("output_tokens", 0)
+                    elif kind == "on_tool_start":
+                        run_id = ev.get("run_id", "")
+                        tool_started_at[run_id] = time.monotonic()
+                        yield ToolCallStartEvent(
+                            run_id=run_id,
+                            name=ev.get("name", ""),
+                            args_json=_clip(
+                                json.dumps(ev["data"].get("input", {}), ensure_ascii=False),
+                                ARGS_MAX,
+                            ),
+                        )
+                    elif kind == "on_tool_end":
+                        run_id = ev.get("run_id", "")
+                        started = tool_started_at.pop(run_id, None)
+                        out = ev["data"].get("output")
+                        text = out.content if hasattr(out, "content") else str(out)
+                        yield ToolCallEndEvent(
+                            run_id=run_id,
+                            name=ev.get("name", ""),
+                            duration_ms=int((time.monotonic() - started) * 1000) if started else 0,
+                            output_preview=_clip(text, OUTPUT_MAX),
+                        )
+                    elif kind == "on_tool_error":
+                        run_id = ev.get("run_id", "")
+                        tool_started_at.pop(run_id, None)
+                        yield ToolCallEndEvent(
+                            run_id=run_id,
+                            name=ev.get("name", ""),
+                            duration_ms=0,
+                            output_preview=_clip(str(ev["data"].get("error", "")), OUTPUT_MAX),
+                            status="error",
+                        )
+            finally:
+                tool_started_at.clear()  # 取消/异常时防泄漏
             # 网关流式偶发只发 reasoning 不发 content（glm 推理模型），全空时兜底提示而非静默
             if delta_count == 0:
                 yield ErrorEvent(

@@ -31,6 +31,22 @@ class Message(Base):
     create_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class MessageToolCall(Base):
+    """assistant 消息期间的工具调用记录（支持历史回看工具卡片）。"""
+
+    __tablename__ = "message_tool_call"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    message_id: Mapped[str] = mapped_column(String(36), index=True)  # 所属 assistant 消息
+    session_id: Mapped[str] = mapped_column(String(36), index=True)  # 冗余，免 join
+    tool_name: Mapped[str] = mapped_column(String(128))
+    args_json: Mapped[str] = mapped_column(Text, default="")  # 完整入参 JSON（≤2000）
+    output_preview: Mapped[str] = mapped_column(Text, default="")  # ≤500
+    status: Mapped[str] = mapped_column(String(16), default="ok")  # ok / error
+    duration_ms: Mapped[int] = mapped_column(default=0)
+    create_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Agent(Base):
     __tablename__ = "agent"
 

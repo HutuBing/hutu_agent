@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Message, Session
+from app.models import Message, MessageToolCall, Session
 
 
 async def create_session(db: AsyncSession, user_id: str, agent_id: str = "default", title: str = "") -> Session:
@@ -44,3 +44,38 @@ async def add_message(db: AsyncSession, session_id: str, role: str, content: str
     db.add(m)
     await db.commit()
     return m
+
+
+async def add_tool_calls(db: AsyncSession, message_id: str, session_id: str,
+                         records: list[dict]) -> None:
+    """批量写入某条 assistant 消息期间的工具调用记录。"""
+    for r in records:
+        db.add(MessageToolCall(
+            message_id=message_id,
+            session_id=session_id,
+            tool_name=r["tool_name"],
+            args_json=r.get("args_json", ""),
+            output_preview=r.get("output_preview", ""),
+            status=r.get("status", "ok"),
+            duration_ms=r.get("duration_ms", 0),
+        ))
+    await db.commit()
+
+
+async def list_tool_calls(db: AsyncSession, session_id: str) -> dict[str, list[dict]]:
+    """按 message_id 分组返回会话内全部工具调用记录。"""
+    result = await db.execute(
+        select(MessageToolCall)
+        .where(MessageToolCall.session_id == session_id)
+        .order_by(MessageToolCall.id.asc())
+    )
+    grouped: dict[str, list[dict]] = {}
+    for tc in result.scalars():
+        grouped.setdefault(tc.message_id, []).append({
+            "tool_name": tc.tool_name,
+            "args_json": tc.args_json,
+            "output_preview": tc.output_preview,
+            "status": tc.status,
+            "duration_ms": tc.duration_ms,
+        })
+    return grouped
