@@ -20,11 +20,17 @@ class SkillMeta(BaseModel):
     description: str
     tags: list[str] = []
     files: list[str] = []
+    handler: str = ""  # 可选：handler.py 中 run(task, context) 入口的说明（仅展示用，执行时按约定加载）
     body: str = ""
 
 
 def parse_skill_md(raw: bytes | str) -> SkillMeta:
-    """解析 SKILL.md：--- frontmatter（YAML）+ Markdown 正文。"""
+    """解析 SKILL.md：--- frontmatter（YAML）+ Markdown 正文。
+
+    约定：技能目录内可含 handler.py，提供 run(task: str, context: dict) -> str
+    （context 内置 now=当前时间、task 等）；有 handler.py 的技能会先执行它获取
+    真实数据，再把数据连同 task 交给正文子 Agent 生成回复。
+    """
     text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
     if not text.startswith("---"):
         raise SkillParseError("SKILL.md 必须以 --- frontmatter 开头")
@@ -53,7 +59,11 @@ def parse_skill_md(raw: bytes | str) -> SkillMeta:
     files = [str(f).strip() for f in files if str(f).strip()]
     validate_files(files)
 
-    return SkillMeta(name=name, description=description, tags=tags, files=files, body=parts[2].strip())
+    handler = str(meta.get("handler", "")).strip()
+    return SkillMeta(
+        name=name, description=description, tags=tags, files=files, handler=handler,
+        body=parts[2].strip(),
+    )
 
 
 def validate_name(name: str) -> None:

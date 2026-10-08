@@ -112,11 +112,39 @@ def _safe_write(vdir: Path, fname: str, content: bytes) -> None:
 
 async def read_skill_body(skill_id: str, version: int) -> str:
     """读最新指定版本的 SKILL.md 正文（供技能工具 system_prompt 用）。"""
+    meta = read_skill_meta(skill_id, version)
+    return meta.body
+
+
+def read_skill_meta(skill_id: str, version: int) -> SkillMeta:
+    """读指定版本的完整 SKILL.md 元数据（含正文）。"""
     p = _skill_dir(skill_id, version) / "SKILL.md"
     if not p.exists():
         raise SkillServiceError(f"技能文件丢失: {p}")
-    meta = parse_skill_md(p.read_bytes())
-    return meta.body
+    return parse_skill_md(p.read_bytes())
+
+
+def load_handler(skill_id: str, version: int):
+    """加载技能目录内的 handler.py（约定导出 run(task, context) -> str）。
+
+    无 handler.py 返回 None；有但格式错误抛 SkillServiceError。
+    handler 是受信任的本地代码（管理员上传），主进程内执行。
+    """
+    p = _skill_dir(skill_id, version) / "handler.py"
+    if not p.exists():
+        return None
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f"skill_{skill_id}_v{version}_handler", p)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception as e:  # noqa: BLE001
+        raise SkillServiceError(f"handler.py 加载失败: {e}") from e
+    run = getattr(mod, "run", None)
+    if not callable(run):
+        raise SkillServiceError("handler.py 必须提供 run(task, context) 函数")
+    return run
 
 
 async def get_version_content(db: AsyncSession, skill_id: str, version: int) -> dict:

@@ -4,6 +4,7 @@ DB 解析在请求作用域完成；事件流阶段只使用纯内存对象（�
 """
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
@@ -31,6 +32,9 @@ class SkillInfo:
     name: str
     description: str
     body: str
+    skill_id: str = ""
+    version: int = 1
+    has_handler: bool = False  # 技能目录含 handler.py（run(task, context) -> str）
 
 
 @dataclass
@@ -82,12 +86,16 @@ async def resolve_agent_context(db: AsyncSession, agent_id: str) -> AgentChatCon
         try:
             from app.core.skill import skill_service
 
-            body = await skill_service.read_skill_body(skill.skill_id, skill.latest_version)
+            meta = skill_service.read_skill_meta(skill.skill_id, skill.latest_version)
+            has_handler = skill_service.load_handler(skill.skill_id, skill.latest_version) is not None
         except Exception:  # noqa: BLE001
             logger.warning("技能 %s 正文读取失败，跳过", sid, exc_info=True)
             ctx.skipped_skills.append(skill.name)
             continue
-        ctx.skills.append(SkillInfo(name=skill.name, description=skill.description, body=body))
+        ctx.skills.append(SkillInfo(
+            name=skill.name, description=skill.description, body=meta.body,
+            skill_id=skill.skill_id, version=skill.latest_version, has_handler=has_handler,
+        ))
 
     return ctx
 
@@ -115,17 +123,43 @@ class _SkillArgs(BaseModel):
 
 
 def build_skill_tools(ctx: AgentChatContext, llm: ChatOpenAI) -> list[StructuredTool]:
-    """每个技能 = 一个工具 = 一次无工具子 Agent 调用（概设：Skill → LangChain Tool）。"""
+    """每个技能 = 一个工具。
+
+    无 handler：一次无工具子 Agent 调用（概设：Skill → LangChain Tool）。
+    有 handler.py：先执行 handler 获取真实数据，再把数据+任务交给子 Agent 生成回复。
+    """
     tools = []
     for sk in ctx.skills:
         async def _run(task: str, _sk=sk, _llm=llm) -> str:
             from langchain_core.messages import HumanMessage
             from langgraph.prebuilt import create_react_agent
+            from app.core.skill import skill_service
 
-            sub_agent = create_react_agent(model=_llm, tools=[], prompt=_sk.body)
+            handler_result = ""
+            if _sk.has_handler:
+                try:
+                    run = skill_service.load_handler(_sk.skill_id, _sk.version)
+                    context = {"task": task, "now": datetime.now()}
+                    result = run(task, context)
+                    handler_result = str(result) if result is not None else ""
+                except Exception as e:  # noqa: BLE001 — handler 失败不炸对话，告知子 Agent
+                    logger.warning("技能 %s handler 执行失败: %s", _sk.name, e)
+                    handler_result = f"（handler 执行失败: {e}）"
+
+            prompt = _sk.body
+            user_content = task
+            if handler_result:
+                prompt = (
+                    f"{_sk.body}\n\n---\n"
+                    f"【系统执行结果（handler 已运行，以下为真实数据）】\n{handler_result}\n"
+                    f"请基于以上真实数据回答用户任务，不要声称无法获取。"
+                )
+                user_content = f"{task}\n\n（系统已通过 handler 获取真实数据，见系统提示中的执行结果）"
+
+            sub_agent = create_react_agent(model=_llm, tools=[], prompt=prompt)
             text: list[str] = []
             async for ev in sub_agent.astream_events(
-                {"messages": [HumanMessage(content=task)]}, version="v2"
+                {"messages": [HumanMessage(content=user_content)]}, version="v2"
             ):
                 if ev.get("event") == "on_chat_model_stream":
                     chunk = ev["data"]["chunk"]
