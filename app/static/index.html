@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hutu_agent · 云端 Agent MVP</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; height: 100vh; display: flex; background: #f5f6fa; color: #2d3436; }
+
+  /* 侧栏 */
+  .sidebar { width: 260px; background: #1e272e; color: #d2dae2; display: flex; flex-direction: column; }
+  .sidebar h1 { font-size: 16px; padding: 18px 16px 12px; color: #fff; }
+  .sidebar .new-btn { margin: 0 16px 12px; padding: 10px; border: 1px dashed #5758bb; border-radius: 8px; background: transparent; color: #9c88ff; font-size: 14px; cursor: pointer; }
+  .sidebar .new-btn:hover { background: #2f3640; }
+  .session-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+  .session-item { padding: 10px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+  .session-item:hover { background: #2f3640; }
+  .session-item.active { background: #5758bb; color: #fff; }
+  .sidebar .meta { padding: 10px 16px; font-size: 11px; color: #808e9b; border-top: 1px solid #2f3640; }
+
+  /* 主区 */
+  .main { flex: 1; display: flex; flex-direction: column; }
+  .chat-head { padding: 14px 24px; background: #fff; border-bottom: 1px solid #e1e4ea; font-size: 15px; font-weight: 600; }
+  .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .empty-tip { margin: auto; color: #b2bec3; font-size: 14px; text-align: center; line-height: 2; }
+
+  .bubble { max-width: 72%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { align-self: flex-end; background: #5758bb; color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.assistant { align-self: flex-start; background: #fff; border: 1px solid #e1e4ea; border-bottom-left-radius: 4px; }
+  .bubble.assistant.streaming::after { content: "▍"; color: #5758bb; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .bubble-meta { align-self: flex-start; font-size: 11px; color: #b2bec3; padding-left: 4px; }
+  .bubble.error { align-self: center; background: #ffeaea; border: 1px solid #ffb3b3; color: #c0392b; font-size: 13px; }
+
+  /* 输入区 */
+  .input-bar { display: flex; gap: 10px; padding: 16px 24px; background: #fff; border-top: 1px solid #e1e4ea; }
+  .input-bar textarea { flex: 1; resize: none; border: 1px solid #dcdde1; border-radius: 10px; padding: 12px 14px; font-size: 14px; font-family: inherit; height: 52px; outline: none; }
+  .input-bar textarea:focus { border-color: #5758bb; }
+  .input-bar button { padding: 0 26px; border: none; border-radius: 10px; background: #5758bb; color: #fff; font-size: 14px; cursor: pointer; }
+  .input-bar button:disabled { background: #b2bec3; cursor: not-allowed; }
+  .input-bar .stop-btn { background: #ee5253; display: none; }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <h1>🤖 hutu_agent</h1>
+  <button class="new-btn" id="newSessionBtn">＋ 新建会话</button>
+  <div class="session-list" id="sessionList"></div>
+  <div class="meta">MVP · SSE v3 · <span id="modeHint"></span></div>
+</aside>
+
+<main class="main">
+  <div class="chat-head" id="chatTitle">选择或新建一个会话</div>
+  <div class="messages" id="messages">
+    <div class="empty-tip">左侧新建会话后即可开始对话<br>消息支持流式输出（SSE v3）</div>
+  </div>
+  <div class="input-bar">
+    <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" disabled></textarea>
+    <button id="sendBtn" disabled>发送</button>
+    <button id="stopBtn" class="stop-btn">停止</button>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentSession = null;   // {session_id, title}
+let controller = null;       // AbortController，用于前端中断
+let busy = false;
+
+// ---------- 会话侧栏 ----------
+async function loadSessions() {
+  const list = await fetch("/api/sessions").then(r => r.json());
+  const box = $("sessionList");
+  box.innerHTML = "";
+  for (const s of list) {
+    const div = document.createElement("div");
+    div.className = "session-item" + (currentSession && s.session_id === currentSession.session_id ? " active" : "");
+    div.textContent = s.title || "(无标题)";
+    div.onclick = () => selectSession(s);
+    box.appendChild(div);
+  }
+}
+
+async function newSession() {
+  const s = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: "会话 " + new Date().toLocaleString("zh-CN", {hour12:false}) })
+  }).then(r => r.json());
+  currentSession = s;
+  clearMessages();
+  await loadSessions();
+}
+
+function selectSession(s) {
+  if (busy) return;
+  currentSession = s;
+  $("chatTitle").textContent = s.title || "(无标题)";
+  loadSessions();
+  loadHistory();
+}
+
+// ---------- 消息渲染 ----------
+function clearMessages() {
+  $("messages").innerHTML = '<div class="empty-tip">开始你的第一轮对话吧</div>';
+}
+function addBubble(cls, text) {
+  const tip = $("messages").querySelector(".empty-tip");
+  if (tip) tip.remove();
+  const div = document.createElement("div");
+  div.className = "bubble " + cls;
+  div.textContent = text;
+  $("messages").appendChild(div);
+  $("messages").scrollTop = $("messages").scrollHeight;
+  return div;
+}
+
+async function loadHistory() {
+  const list = await fetch(`/api/sessions/${currentSession.session_id}/messages`).then(r => r.json());
+  $("messages").innerHTML = "";
+  if (!list.length) { clearMessages(); return; }
+  for (const m of list) addBubble(m.role === "user" ? "user" : "assistant", m.content);
+}
+
+// ---------- SSE 对话 ----------
+async function send() {
+  const input = $("input");
+  const content = input.value.trim();
+  if (!content || busy || !currentSession) return;
+  busy = true;
+  input.value = "";
+  $("sendBtn").disabled = true;
+  $("stopBtn").style.display = "inline-block";
+
+  addBubble("user", content);
+  const reply = addBubble("assistant streaming", "");
+  controller = new AbortController();
+
+  try {
+    const resp = await fetch(`/api/sessions/${currentSession.session_id}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+      signal: controller.signal,
+    });
+    if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", usage = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const frames = buf.split("\n\n");
+      buf = frames.pop();
+      for (const frame of frames) {
+        if (!frame.startsWith("data: ")) continue;
+        const ev = JSON.parse(frame.slice(6));
+        switch (ev.type) {
+          case "delta": reply.textContent += ev.content; $("messages").scrollTop = $("messages").scrollHeight; break;
+          case "usage":
+            usage = ev;
+            addBubble("bubble-meta", `tokens: 输入 ${ev.prompt_tokens} / 输出 ${ev.completion_tokens} / 共 ${ev.total_tokens}`);
+            break;
+          case "cancelled": addBubble("bubble-meta", "⚠ 已取消"); break;
+          case "error": addBubble("error", "错误: " + ev.message); break;
+        }
+      }
+    }
+    reply.classList.remove("streaming");
+    if (!reply.textContent && !usage) reply.remove();
+  } catch (e) {
+    reply.classList.remove("streaming");
+    if (e.name !== "AbortError") addBubble("error", "连接异常: " + e.message);
+  } finally {
+    busy = false;
+    controller = null;
+    $("sendBtn").disabled = false;
+    $("stopBtn").style.display = "none";
+    loadSessions(); // 刷新排序
+  }
+}
+
+$("sendBtn").onclick = send;
+$("stopBtn").onclick = () => controller && controller.abort();
+$("newSessionBtn").onclick = newSession;
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+// ---------- 启动 ----------
+(async () => {
+  const health = await fetch("/health").then(r => r.json());
+  $("modeHint").textContent = health.llm_fake ? "演示模式" : "LLM 已接入";
+  await loadSessions();
+  $("input").disabled = false;
+  $("sendBtn").disabled = false;
+})();
+</script>
+</body>
+</html>
