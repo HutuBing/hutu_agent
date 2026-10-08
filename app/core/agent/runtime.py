@@ -39,6 +39,7 @@ class AgentChatContext:
     system_prompt: str
     llm: LlmSpec | None = None
     skills: list[SkillInfo] = field(default_factory=list)
+    skipped_skills: list[str] = field(default_factory=list)  # 读盘失败被跳过的技能名
 
 
 async def resolve_agent_context(db: AsyncSession, agent_id: str) -> AgentChatContext | None:
@@ -84,6 +85,7 @@ async def resolve_agent_context(db: AsyncSession, agent_id: str) -> AgentChatCon
             body = await skill_service.read_skill_body(skill.skill_id, skill.latest_version)
         except Exception:  # noqa: BLE001
             logger.warning("技能 %s 正文读取失败，跳过", sid, exc_info=True)
+            ctx.skipped_skills.append(skill.name)
             continue
         ctx.skills.append(SkillInfo(name=skill.name, description=skill.description, body=body))
 
