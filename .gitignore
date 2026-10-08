@@ -8,3 +8,5 @@ data/
 .pytest_cache/
 .idea/
 .vscode/
+web/node_modules/
+web/dist/
