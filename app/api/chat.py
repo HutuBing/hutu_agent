@@ -3,7 +3,9 @@ import json
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse as StreamingSSEResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_dev_user, UserInfo
@@ -76,13 +78,16 @@ async def _chat_stream(
     content: str,
     history: list[dict],
     request: Request,
+    agent_ctx=None,
 ) -> AsyncIterator[str]:
     async def disconnected() -> bool:
         return await request.is_disconnected()
 
     full_reply = []
     cancelled = False
-    async for ev in run_chat_turn(content, history, request_disconnected=disconnected):
+    async for ev in run_chat_turn(
+        content, history, request_disconnected=disconnected, agent_ctx=agent_ctx
+    ):
         if ev.type == "delta":
             full_reply.append(ev.content)
         elif ev.type == "cancelled":
@@ -91,9 +96,9 @@ async def _chat_stream(
 
     # 事件流结束后统一落库（cancelled 时不落 assistant 残文）
     from app.core.chat.session_service import add_message
-    from app.db import SessionLocal
+    from app.db import get_engine
 
-    async with SessionLocal() as db:
+    async with async_sessionmaker(get_engine(), expire_on_commit=False)() as db:
         await add_message(db, session_id, "user", content)
         if not cancelled and full_reply:
             await add_message(db, session_id, "assistant", "".join(full_reply))
@@ -115,8 +120,10 @@ async def chat(
         {"role": m.role, "content": m.content}
         for m in await session_service.list_messages(db, session_id)
     ]
-    return StreamingSSEResponse(_chat_stream(session_id, req.content, history, request))
+    # 请求作用域解析 Agent 上下文（LLM + 技能工具），事件流阶段不再碰 DB
+    from app.core.agent.runtime import resolve_agent_context
 
-
-# 局部导入避免命名冲突：FastAPI 的 StreamingResponse
-from fastapi.responses import StreamingResponse as StreamingSSEResponse  # noqa: E402
+    agent_ctx = await resolve_agent_context(db, s.agent_id)
+    return StreamingSSEResponse(
+        _chat_stream(session_id, req.content, history, request, agent_ctx)
+    )

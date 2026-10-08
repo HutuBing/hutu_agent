@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>hutu_agent · 云端 Agent MVP</title>
+<title>hutu_agent · 云端 Agent</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; height: 100vh; display: flex; background: #f5f6fa; color: #2d3436; }
 
-  /* 侧栏 */
+  /* 侧栏（对话 tab 专用） */
   .sidebar { width: 260px; background: #1e272e; color: #d2dae2; display: flex; flex-direction: column; }
   .sidebar h1 { font-size: 16px; padding: 18px 16px 12px; color: #fff; }
   .sidebar .new-btn { margin: 0 16px 12px; padding: 10px; border: 1px dashed #5758bb; border-radius: 8px; background: transparent; color: #9c88ff; font-size: 14px; cursor: pointer; }
@@ -19,8 +19,15 @@
   .session-item.active { background: #5758bb; color: #fff; }
   .sidebar .meta { padding: 10px 16px; font-size: 11px; color: #808e9b; border-top: 1px solid #2f3640; }
 
-  /* 主区 */
+  /* 主区 + tab */
   .main { flex: 1; display: flex; flex-direction: column; }
+  .tabbar { display: flex; gap: 4px; padding: 10px 24px 0; background: #fff; border-bottom: 1px solid #e1e4ea; }
+  .tabbar button { border: none; background: transparent; padding: 10px 18px; font-size: 14px; cursor: pointer; color: #636e72; border-bottom: 2px solid transparent; }
+  .tabbar button.active { color: #5758bb; border-bottom-color: #5758bb; font-weight: 600; }
+  section.tab { display: none; flex: 1; overflow: hidden; }
+  section.tab.active { display: flex; }
+
+  .chat-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   .chat-head { padding: 14px 24px; background: #fff; border-bottom: 1px solid #e1e4ea; font-size: 15px; font-weight: 600; }
   .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
   .empty-tip { margin: auto; color: #b2bec3; font-size: 14px; text-align: center; line-height: 2; }
@@ -41,6 +48,45 @@
   .input-bar button { padding: 0 26px; border: none; border-radius: 10px; background: #5758bb; color: #fff; font-size: 14px; cursor: pointer; }
   .input-bar button:disabled { background: #b2bec3; cursor: not-allowed; }
   .input-bar .stop-btn { background: #ee5253; display: none; }
+
+  /* 管理页通用 */
+  .admin-wrap { flex: 1; display: flex; overflow: hidden; }
+  .admin-list { width: 320px; border-right: 1px solid #e1e4ea; overflow-y: auto; background: #fff; }
+  .admin-list .item { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f1f2f6; }
+  .admin-list .item:hover { background: #f5f6fa; }
+  .admin-list .item.active { background: #eeeaff; }
+  .admin-list .item .t { font-size: 14px; font-weight: 600; }
+  .admin-list .item .d { font-size: 12px; color: #808e9b; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .admin-form { flex: 1; padding: 20px 28px; overflow-y: auto; }
+  .admin-form h3 { font-size: 15px; margin-bottom: 14px; }
+  .admin-form label { display: block; font-size: 12px; color: #636e72; margin: 12px 0 4px; }
+  .admin-form input[type=text], .admin-form input[type=password], .admin-form input[type=number],
+  .admin-form textarea, .admin-form select { width: 100%; max-width: 560px; padding: 9px 12px; border: 1px solid #dcdde1; border-radius: 8px; font-size: 13px; font-family: inherit; outline: none; }
+  .admin-form textarea { min-height: 90px; resize: vertical; }
+  .admin-form input:focus, .admin-form textarea:focus { border-color: #5758bb; }
+  .admin-form .row { display: flex; gap: 10px; margin-top: 18px; }
+  .admin-form .row button { padding: 9px 24px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
+  .btn-primary { background: #5758bb; color: #fff; }
+  .btn-danger { background: #fff; color: #e17055; border: 1px solid #e17055 !important; }
+  .btn-ghost { background: #fff; color: #636e72; border: 1px solid #dcdde1 !important; }
+  .checkbox-list { max-width: 560px; border: 1px solid #dcdde1; border-radius: 8px; padding: 8px 12px; max-height: 160px; overflow-y: auto; }
+  .checkbox-list label { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 13px; color: #2d3436; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .badge.on { background: #e6f9e6; color: #1e8e3e; }
+  .badge.off { background: #fdecea; color: #c0392b; }
+  .list-toolbar { padding: 12px 16px; border-bottom: 1px solid #e1e4ea; display: flex; gap: 8px; align-items: center; }
+  .list-toolbar button { padding: 7px 14px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
+
+  /* 弹层 */
+  .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 10; align-items: center; justify-content: center; }
+  .modal-mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 22px 26px; width: 460px; max-height: 80vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 12px; font-size: 15px; }
+  .modal pre { background: #f5f6fa; border: 1px solid #e1e4ea; border-radius: 8px; padding: 12px; font-size: 12px; max-height: 50vh; overflow: auto; white-space: pre-wrap; }
+  .modal .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+
+  .new-session-modal .modal { width: 380px; }
+  .new-session-modal select { width: 100%; padding: 9px 12px; border: 1px solid #dcdde1; border-radius: 8px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -49,49 +95,165 @@
   <h1>🤖 hutu_agent</h1>
   <button class="new-btn" id="newSessionBtn">＋ 新建会话</button>
   <div class="session-list" id="sessionList"></div>
-  <div class="meta">MVP · SSE v3 · <span id="modeHint"></span></div>
+  <div class="meta">SSE v3 · <span id="modeHint"></span></div>
 </aside>
 
 <main class="main">
-  <div class="chat-head" id="chatTitle">选择或新建一个会话</div>
-  <div class="messages" id="messages">
-    <div class="empty-tip">左侧新建会话后即可开始对话<br>消息支持流式输出（SSE v3）</div>
+  <div class="tabbar">
+    <button data-tab="chat" class="active">对话</button>
+    <button data-tab="agents">Agent 管理</button>
+    <button data-tab="skills">Skill 管理</button>
+    <button data-tab="llms">LLM 配置</button>
   </div>
-  <div class="input-bar">
-    <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" disabled></textarea>
-    <button id="sendBtn" disabled>发送</button>
-    <button id="stopBtn" class="stop-btn">停止</button>
-  </div>
+
+  <!-- 对话 -->
+  <section class="tab active" id="tab-chat">
+    <div class="chat-wrap">
+      <div class="chat-head" id="chatTitle">选择或新建一个会话</div>
+      <div class="messages" id="messages">
+        <div class="empty-tip">左侧新建会话后即可开始对话<br>新建时可选择绑定了技能/模型的 Agent</div>
+      </div>
+      <div class="input-bar">
+        <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" disabled></textarea>
+        <button id="sendBtn" disabled>发送</button>
+        <button id="stopBtn" class="stop-btn">停止</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent 管理 -->
+  <section class="tab" id="tab-agents">
+    <div class="admin-wrap">
+      <div class="admin-list">
+        <div class="list-toolbar">
+          <button class="btn-primary" id="newAgentBtn">＋ 新建 Agent</button>
+        </div>
+        <div id="agentList"></div>
+      </div>
+      <div class="admin-form" id="agentForm"></div>
+    </div>
+  </section>
+
+  <!-- Skill 管理 -->
+  <section class="tab" id="tab-skills">
+    <div class="admin-wrap">
+      <div class="admin-list">
+        <div class="list-toolbar">
+          <button class="btn-primary" id="uploadSkillBtn">⬆ 上传技能</button>
+        </div>
+        <div id="skillList"></div>
+      </div>
+      <div class="admin-form" id="skillForm"></div>
+    </div>
+  </section>
+
+  <!-- LLM 配置 -->
+  <section class="tab" id="tab-llms">
+    <div class="admin-wrap">
+      <div class="admin-list">
+        <div class="list-toolbar">
+          <button class="btn-primary" id="newLlmBtn">＋ 新建配置</button>
+        </div>
+        <div id="llmList"></div>
+      </div>
+      <div class="admin-form" id="llmForm"></div>
+    </div>
+  </section>
 </main>
+
+<!-- 新建会话弹层（选 Agent） -->
+<div class="modal-mask new-session-modal" id="newSessionModal">
+  <div class="modal">
+    <h3>新建会话</h3>
+    <label>选择 Agent</label>
+    <select id="agentSelect"></select>
+    <div class="row">
+      <button class="btn-ghost" onclick="closeModal('newSessionModal')">取消</button>
+      <button class="btn-primary" id="createSessionBtn">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用内容弹层（查看技能） -->
+<div class="modal-mask" id="viewModal">
+  <div class="modal">
+    <h3 id="viewTitle"></h3>
+    <pre id="viewBody"></pre>
+    <div class="row"><button class="btn-primary" onclick="closeModal('viewModal')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 上传技能弹层 -->
+<div class="modal-mask" id="uploadModal">
+  <div class="modal">
+    <h3>上传技能（SKILL.md + 附属文件）</h3>
+    <label>技能文件（可多选，必须含 SKILL.md；同名技能将自动创建新版本）</label>
+    <input type="file" id="skillFiles" multiple>
+    <div class="row">
+      <button class="btn-ghost" onclick="closeModal('uploadModal')">取消</button>
+      <button class="btn-primary" id="doUploadSkillBtn">上传</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let currentSession = null;   // {session_id, title}
-let controller = null;       // AbortController，用于前端中断
+let currentSession = null;
+let controller = null;
 let busy = false;
+let agentsCache = [];   // id -> name 映射用
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-// ---------- 会话侧栏 ----------
+// ================= Tab 切换 =================
+document.querySelectorAll(".tabbar button").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".tabbar button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("section.tab").forEach(s => s.classList.remove("active"));
+    btn.classList.add("active");
+    $("tab-" + btn.dataset.tab).classList.add("active");
+    if (btn.dataset.tab === "agents") loadAgents();
+    if (btn.dataset.tab === "skills") loadSkills();
+    if (btn.dataset.tab === "llms") loadLlms();
+  };
+});
+function openModal(id) { $(id).classList.add("show"); }
+function closeModal(id) { $(id).classList.remove("show"); }
+
+// ================= 会话/对话（原有逻辑 + Agent 选择） =================
 async function loadSessions() {
   const list = await fetch("/api/sessions").then(r => r.json());
+  const agentMap = Object.fromEntries(agentsCache.map(a => [a.agent_id, a.name]));
   const box = $("sessionList");
   box.innerHTML = "";
   for (const s of list) {
     const div = document.createElement("div");
     div.className = "session-item" + (currentSession && s.session_id === currentSession.session_id ? " active" : "");
-    div.textContent = s.title || "(无标题)";
+    const agentName = s.agent_id && s.agent_id !== "default" ? (agentMap[s.agent_id] || s.agent_id.slice(0, 8)) : null;
+    div.textContent = (agentName ? `[${agentName}] ` : "") + (s.title || "(无标题)");
     div.onclick = () => selectSession(s);
     box.appendChild(div);
   }
 }
 
-async function newSession() {
+async function openNewSessionModal() {
+  agentsCache = await fetch("/api/agents").then(r => r.json());
+  const sel = $("agentSelect");
+  sel.innerHTML = '<option value="default">默认助手（全局配置）</option>' +
+    agentsCache.map(a => `<option value="${a.agent_id}">${esc(a.name)}</option>`).join("");
+  openModal("newSessionModal");
+}
+
+async function createSession() {
+  const agentId = $("agentSelect").value;
   const s = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: "会话 " + new Date().toLocaleString("zh-CN", {hour12:false}) })
+    body: JSON.stringify({ title: "会话 " + new Date().toLocaleString("zh-CN", {hour12:false}), agent_id: agentId })
   }).then(r => r.json());
   currentSession = s;
+  closeModal("newSessionModal");
   clearMessages();
+  $("chatTitle").textContent = (s.agent_id !== "default" ? `[${(agentsCache.find(a=>a.agent_id===s.agent_id)||{}).name || ""}] ` : "") + (s.title || "(无标题)");
   await loadSessions();
 }
 
@@ -103,7 +265,6 @@ function selectSession(s) {
   loadHistory();
 }
 
-// ---------- 消息渲染 ----------
 function clearMessages() {
   $("messages").innerHTML = '<div class="empty-tip">开始你的第一轮对话吧</div>';
 }
@@ -125,7 +286,6 @@ async function loadHistory() {
   for (const m of list) addBubble(m.role === "user" ? "user" : "assistant", m.content);
 }
 
-// ---------- SSE 对话 ----------
 async function send() {
   const input = $("input");
   const content = input.value.trim();
@@ -182,21 +342,219 @@ async function send() {
     controller = null;
     $("sendBtn").disabled = false;
     $("stopBtn").style.display = "none";
-    loadSessions(); // 刷新排序
+    loadSessions();
   }
 }
 
 $("sendBtn").onclick = send;
 $("stopBtn").onclick = () => controller && controller.abort();
-$("newSessionBtn").onclick = newSession;
+$("newSessionBtn").onclick = openNewSessionModal;
+$("createSessionBtn").onclick = createSession;
 $("input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
-// ---------- 启动 ----------
+// ================= Agent 管理 =================
+async function loadAgents() {
+  agentsCache = await fetch("/api/agents").then(r => r.json());
+  const box = $("agentList");
+  box.innerHTML = agentsCache.map(a => `
+    <div class="item" data-id="${a.agent_id}" onclick="showAgentForm('${a.agent_id}')">
+      <div class="t">${esc(a.name)}</div>
+      <div class="d">技能 ${a.skill_names.length} 个 · 模型 ${esc(a.llm_name || "全局回退")}</div>
+    </div>`).join("") || '<div class="item"><div class="d">暂无 Agent，点击上方新建</div></div>';
+}
+
+async function showAgentForm(agentId) {
+  document.querySelectorAll("#agentList .item").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === agentId));
+  const skills = await fetch("/api/skills").then(r => r.json());
+  const llms = await fetch("/api/llm-configs").then(r => r.json());
+  const a = agentId ? agentsCache.find(x => x.agent_id === agentId) : null;
+  const bound = a ? a.skill_ids : [];
+
+  $("agentForm").innerHTML = `
+    <h3>${a ? "编辑 Agent：" + esc(a.name) : "新建 Agent"}</h3>
+    <label>名称</label>
+    <input type="text" id="agName" value="${esc(a?.name || "")}" placeholder="如：运维助手">
+    <label>描述</label>
+    <input type="text" id="agDesc" value="${esc(a?.description || "")}">
+    <label>System Prompt</label>
+    <textarea id="agPrompt" placeholder="留空则使用全局默认">${esc(a?.system_prompt || "")}</textarea>
+    <label>绑定技能（对话中作为可调用工具）</label>
+    <div class="checkbox-list">${skills.map(s => `
+      <label><input type="checkbox" value="${s.skill_id}" ${bound.includes(s.skill_id) ? "checked" : ""}> ${esc(s.name)} <span style="color:#b2bec3">${esc(s.description.slice(0, 30))}</span></label>`).join("") || "（请先到 Skill 管理页上传）"}
+    </div>
+    <label>绑定大模型</label>
+    <select id="agLlm">
+      <option value="">全局回退（.env 配置）</option>
+      ${llms.map(l => `<option value="${l.config_id}" ${a?.config_id === l.config_id ? "selected" : ""}>${esc(l.name)}（${esc(l.model_identifier)}）</option>`).join("")}
+    </select>
+    <div class="row">
+      ${a ? `<button class="btn-danger" onclick="deleteAgent('${a.agent_id}')">删除</button>` : ""}
+      <span style="flex:1"></span>
+      <button class="btn-primary" onclick="saveAgent('${agentId || ""}')">保存</button>
+    </div>`;
+}
+
+async function saveAgent(agentId) {
+  const payload = {
+    name: $("agName").value.trim(),
+    description: $("agDesc").value,
+    system_prompt: $("agPrompt").value,
+    skill_ids: [...document.querySelectorAll("#agentForm .checkbox-list input:checked")].map(i => i.value),
+    config_id: $("agLlm").value || null,
+  };
+  if (!payload.name) return alert("请填写名称");
+  const url = agentId ? `/api/agents/${agentId}` : "/api/agents";
+  const r = await fetch(url, { method: agentId ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!r.ok) return alert(await r.text());
+  await loadAgents();
+  showAgentForm(agentId || (await r.json()).agent_id);
+}
+
+async function deleteAgent(agentId) {
+  if (!confirm("确认删除该 Agent？（会话不受影响，仅回退全局配置）")) return;
+  await fetch(`/api/agents/${agentId}`, { method: "DELETE" });
+  loadAgents();
+  $("agentForm").innerHTML = "<h3>已删除</h3>";
+}
+$("newAgentBtn").onclick = () => showAgentForm(null);
+
+// ================= Skill 管理 =================
+async function loadSkills() {
+  const skills = await fetch("/api/skills").then(r => r.json());
+  $("skillList").innerHTML = skills.map(s => `
+    <div class="item" data-id="${s.skill_id}" onclick="showSkillDetail('${s.skill_id}')">
+      <div class="t">${esc(s.name)} <span style="color:#5758bb;font-weight:400">v${s.latest_version}</span></div>
+      <div class="d">${esc(s.description)}</div>
+      <div class="d">${s.tags.map(t => `#${esc(t)}`).join(" ")}</div>
+    </div>`).join("") || '<div class="item"><div class="d">暂无技能，点击上方上传</div></div>';
+}
+
+async function showSkillDetail(skillId) {
+  document.querySelectorAll("#skillList .item").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === skillId));
+  const detail = await fetch(`/api/skills/${skillId}`).then(r => r.json());
+  $("skillForm").innerHTML = `
+    <h3>${esc(detail.name)} <span class="badge on">v${detail.latest_version}</span></h3>
+    <p style="font-size:13px;color:#636e72;max-width:560px">${esc(detail.description)}</p>
+    <p style="font-size:12px;color:#b2bec3;margin-top:6px">标签：${detail.tags.map(esc).join("、") || "无"}</p>
+    <label>版本历史</label>
+    <div style="max-width:560px">${detail.versions.map(v => `
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f2f6;font-size:13px">
+        <span style="color:#5758bb;font-weight:600">v${v.version}</span>
+        <span style="flex:1;color:#808e9b">${v.files.map(esc).join("、")}</span>
+        <button class="btn-ghost" style="padding:4px 12px" onclick="viewSkillVersion('${skillId}',${v.version})">查看</button>
+      </div>`).join("")}
+    </div>
+    <div class="row"><span style="flex:1"></span>
+      <button class="btn-danger" onclick="deleteSkill('${skillId}')">删除技能</button>
+    </div>`;
+}
+
+async function viewSkillVersion(skillId, version) {
+  const v = await fetch(`/api/skills/${skillId}/versions/${version}`).then(r => r.json());
+  $("viewTitle").textContent = `${v.name} · v${version}`;
+  $("viewBody").textContent = `---\nname: ${v.name}\ndescription: ${v.description}\ntags: [${v.tags.join(", ")}]\n---\n\n` + v.body;
+  openModal("viewModal");
+}
+
+async function deleteSkill(skillId) {
+  if (!confirm("确认删除该技能的全部版本？（将同时解除所有 Agent 的绑定）")) return;
+  await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+  loadSkills();
+  $("skillForm").innerHTML = "<h3>已删除</h3>";
+}
+
+$("uploadSkillBtn").onclick = () => openModal("uploadModal");
+$("doUploadSkillBtn").onclick = async () => {
+  const files = $("skillFiles").files;
+  if (!files.length) return alert("请选择文件");
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  const r = await fetch("/api/skills", { method: "POST", body: fd });
+  if (!r.ok) return alert("上传失败：\n" + await r.text());
+  closeModal("uploadModal");
+  $("skillFiles").value = "";
+  loadSkills();
+};
+
+// ================= LLM 配置 =================
+async function loadLlms() {
+  const llms = await fetch("/api/llm-configs").then(r => r.json());
+  $("llmList").innerHTML = llms.map(l => `
+    <div class="item" data-id="${l.config_id}" onclick="showLlmForm('${l.config_id}')">
+      <div class="t">${esc(l.name)} <span class="badge ${l.status === "enabled" ? "on" : "off"}">${l.status === "enabled" ? "启用" : "停用"}</span></div>
+      <div class="d">${esc(l.model_identifier)} · ${esc(l.api_key_masked)}</div>
+    </div>`).join("") || '<div class="item"><div class="d">暂无配置，点击上方新建</div></div>';
+}
+
+async function showLlmForm(configId) {
+  document.querySelectorAll("#llmList .item").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === configId));
+  const l = configId ? (await fetch("/api/llm-configs").then(r => r.json())).find(x => x.config_id === configId) : null;
+
+  $("llmForm").innerHTML = `
+    <h3>${l ? "编辑配置：" + esc(l.name) : "新建 LLM 配置"}</h3>
+    <label>配置名称</label>
+    <input type="text" id="lmName" value="${esc(l?.name || "")}" placeholder="如：fuyao-gw">
+    <label>Provider</label>
+    <input type="text" id="lmProvider" value="${esc(l?.provider || "openai_compatible")}">
+    <label>API Base URL</label>
+    <input type="text" id="lmUrl" value="${esc(l?.api_base_url || "")}" placeholder="https://xxx/v1（OpenAI 兼容协议）">
+    <label>Model</label>
+    <input type="text" id="lmModel" value="${esc(l?.model_identifier || "")}" placeholder="如 gpt-4o-mini / fuyao-coding">
+    <label>API Key ${l ? `（当前 ${esc(l.api_key_masked)}，留空 = 不修改）` : ""}</label>
+    <input type="password" id="lmKey" placeholder="${l ? "不修改请留空" : "sk-..."}">
+    <label>每千 token 单价（元，选填）</label>
+    <input type="number" id="lmPrice" step="0.0001" value="${l?.price_per_1k_tokens ?? 0}">
+    <label>状态</label>
+    <select id="lmStatus">
+      <option value="enabled" ${l?.status !== "disabled" ? "selected" : ""}>启用</option>
+      <option value="disabled" ${l?.status === "disabled" ? "selected" : ""}>停用</option>
+    </select>
+    <div class="row">
+      ${l ? `<button class="btn-danger" onclick="deleteLlm('${l.config_id}')">删除</button>` : ""}
+      <span style="flex:1"></span>
+      <button class="btn-primary" onclick="saveLlm('${configId || ""}')">保存</button>
+    </div>`;
+}
+
+async function saveLlm(configId) {
+  const payload = {
+    name: $("lmName").value.trim(),
+    provider: $("lmProvider").value.trim(),
+    api_base_url: $("lmUrl").value.trim(),
+    api_key: $("lmKey").value,
+    model_identifier: $("lmModel").value.trim(),
+    price_per_1k_tokens: parseFloat($("lmPrice").value) || 0,
+    status: $("lmStatus").value,
+  };
+  if (!payload.name) return alert("请填写配置名称");
+  if (!configId && !payload.api_key) return alert("新建必须填写 API Key");
+  const url = configId ? `/api/llm-configs/${configId}` : "/api/llm-configs";
+  const r = await fetch(url, { method: configId ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!r.ok) return alert(await r.text());
+  loadLlms();
+  showLlmForm(configId || (await r.json()).config_id);
+}
+
+async function deleteLlm(configId) {
+  if (!confirm("确认删除该配置？（绑定它的 Agent 将回退全局配置）")) return;
+  await fetch(`/api/llm-configs/${configId}`, { method: "DELETE" });
+  loadLlms();
+  $("llmForm").innerHTML = "<h3>已删除</h3>";
+}
+$("newLlmBtn").onclick = () => showLlmForm(null);
+
+// ================= 启动 =================
 (async () => {
   const health = await fetch("/health").then(r => r.json());
-  $("modeHint").textContent = health.llm_fake ? "演示模式" : "LLM 已接入";
+  $("modeHint").textContent = health.llm_fake ? "演示模式（技能不生效）" : "LLM 已接入";
+  agentsCache = await fetch("/api/agents").then(r => r.json()).catch(() => []);
   await loadSessions();
   $("input").disabled = false;
   $("sendBtn").disabled = false;
