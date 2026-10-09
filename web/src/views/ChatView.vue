@@ -55,7 +55,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { appStore, loadHealth, loadAgents } from '@/stores/app'
 import { listSessions, createSession, listMessages, chatStream } from '@/api/session'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
@@ -142,8 +142,9 @@ async function send() {
   input.value = ''
   atBottom.value = true
 
-  messages.value.push({ id: `u_${Date.now()}`, role: 'user', blocks: [{ kind: 'text', content }], usage: null })
-  const reply = { id: `a_${Date.now()}`, role: 'assistant', blocks: [], usage: null, done: false }
+  messages.value.push({ id: `u_${Date.now()}`, role: 'user', blocks: [{ kind: 'text', content }], usage: null, done: true })
+  // reactive 包装：后续 delta 变更必须走代理才能触发重渲染（普通对象会绕过响应式）
+  const reply = reactive({ id: `a_${Date.now()}`, role: 'assistant', blocks: [], usage: null, done: false })
   messages.value.push(reply)
   scrollBottom(true)
 
