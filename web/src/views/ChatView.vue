@@ -107,6 +107,7 @@ async function loadHistory() {
         ]
       : [{ kind: 'text', content: m.content }],
     usage: null,
+    done: true, // 历史消息不在生成中
   }))
   scrollBottom(true)
 }
@@ -142,7 +143,7 @@ async function send() {
   atBottom.value = true
 
   messages.value.push({ id: `u_${Date.now()}`, role: 'user', blocks: [{ kind: 'text', content }], usage: null })
-  const reply = { id: `a_${Date.now()}`, role: 'assistant', blocks: [], usage: null }
+  const reply = { id: `a_${Date.now()}`, role: 'assistant', blocks: [], usage: null, done: false }
   messages.value.push(reply)
   scrollBottom(true)
 
@@ -189,6 +190,7 @@ async function send() {
   } catch (e) {
     if (e.name !== 'AbortError') reply.errorMsg = '连接异常: ' + e.message
   } finally {
+    reply.done = true // 结束生成中光标
     busy.value = false
     controller = null
     loadSessions() // 刷新侧栏排序
