@@ -9,3 +9,4 @@ sqlalchemy[asyncio]>=2.0.30
 cryptography>=42
 pyyaml>=6
 python-multipart>=0.0.9
+pypdf>=4

@@ -11,6 +11,9 @@
         >
           <div class="t">
             {{ l.name }}
+            <el-tag size="small" :type="l.usage === 'embedding' ? 'info' : 'primary'" effect="plain">
+              {{ l.usage === 'embedding' ? '向量嵌入' : '对话' }}
+            </el-tag>
             <el-tag size="small" :type="l.status === 'enabled' ? 'success' : 'danger'" effect="plain">
               {{ l.status === 'enabled' ? '启用' : '停用' }}
             </el-tag>
@@ -31,7 +34,13 @@
             <el-input v-model="form.api_base_url" placeholder="https://xxx/v1（OpenAI 兼容协议）" />
           </el-form-item>
           <el-form-item label="Model">
-            <el-input v-model="form.model_identifier" placeholder="如 gpt-4o-mini / fuyao-coding" />
+            <el-input v-model="form.model_identifier" placeholder="如 gpt-4o-mini / text-embedding-3-small" />
+          </el-form-item>
+          <el-form-item label="用途">
+            <el-radio-group v-model="form.usage">
+              <el-radio value="chat">对话模型</el-radio>
+              <el-radio value="embedding">向量嵌入（知识库用）</el-radio>
+            </el-radio-group>
           </el-form-item>
           <el-form-item :label="currentId ? `API Key（当前 ${currentMasked}，留空不修改）` : 'API Key'">
             <el-input v-model="form.api_key" type="password" show-password
@@ -74,7 +83,7 @@ function startCreate() {
   currentId.value = ''
   form.value = {
     name: '', provider: 'openai_compatible', api_base_url: '', model_identifier: '',
-    api_key: '', price_per_1k_tokens: 0, quota_limit: 0, status: 'enabled',
+    api_key: '', usage: 'chat', price_per_1k_tokens: 0, quota_limit: 0, status: 'enabled',
   }
 }
 
@@ -82,7 +91,7 @@ function loadForm(l) {
   currentId.value = l.config_id
   form.value = {
     name: l.name, provider: l.provider, api_base_url: l.api_base_url,
-    model_identifier: l.model_identifier, api_key: '',
+    model_identifier: l.model_identifier, api_key: '', usage: l.usage || 'chat',
     price_per_1k_tokens: l.price_per_1k_tokens, quota_limit: l.quota_limit, status: l.status,
   }
 }

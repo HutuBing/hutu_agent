@@ -82,14 +82,24 @@ async def run_chat_turn(
                     messages.append(AIMessage(content=m["content"]))
             messages.append(HumanMessage(content=user_input))
 
-            # 3. ReAct Agent：注入绑定技能为工具；prompt 取 Agent 配置或全局默认
+            # 3. ReAct Agent：注入绑定技能与知识库工具；prompt 取 Agent 配置或全局默认
             prompt = agent_ctx.system_prompt if agent_ctx else settings.agent_system_prompt
-            tools = build_skill_tools(agent_ctx, llm) if agent_ctx else []
+            tools = []
+            if agent_ctx:
+                from app.core.agent.runtime import build_kb_tools, build_skill_tools
+
+                tools = build_skill_tools(agent_ctx, llm) + build_kb_tools(agent_ctx)
             agent = create_react_agent(model=llm, tools=tools, prompt=prompt)
-            # 绑定技能读盘失败被跳过时，在回复前明确提示用户
+            # 绑定的技能/知识库装配失败被跳过时，在回复前明确提示用户
+            skipped_notes = []
             if agent_ctx and getattr(agent_ctx, "skipped_skills", None):
-                names = ", ".join(agent_ctx.skipped_skills)
-                yield DeltaEvent(content=f"（提示：绑定技能 {names} 的文件读取失败，本轮未注入为工具）\n\n")
+                skipped_notes.append(f"绑定技能 {', '.join(agent_ctx.skipped_skills)} 的文件读取失败")
+            if agent_ctx and getattr(agent_ctx, "skipped_kbs", None):
+                skipped_notes.append(
+                    f"挂载知识库 {', '.join(agent_ctx.skipped_kbs)} 缺少可用的 embedding 配置"
+                )
+            if skipped_notes:
+                yield DeltaEvent(content=f"（提示：{'；'.join(skipped_notes)}，本轮未生效）\n\n")
 
             # 4. 流式消费：模型 token / 工具调用 / usage 统一转成抽象事件
             prompt_tokens = completion_tokens = 0

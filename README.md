@@ -7,9 +7,10 @@
 | 模块 | 能力 |
 |---|---|
 | 对话 | 多轮流式对话（`msg_start/delta/usage/cancelled/error/msg_end`）、历史落库、前端中断 |
-| Agent 管理 | 创建/编辑/删除 Agent，绑定技能（多选）与大模型（单选），对话时动态装配 |
+| Agent 管理 | 创建/编辑/删除 Agent，绑定技能（多选）、知识库（多选）与大模型（单选），对话时动态装配 |
 | Skill 管理 | SKILL.md 上传（YAML frontmatter 校验 + 路径安全）、本地磁盘版本化存储、同名自动升版本 |
-| LLM 配置 | 多供应商配置，API Key Fernet 加密落库、列表脱敏（`sk-****abcd`）、留空即不改 |
+| 知识库 | 上传 .md/.txt/.pdf → 切块 → embedding 向量化（余弦 top-5 检索）；Agent 挂载后对话中自动出检索工具卡片 |
+| LLM 配置 | 多供应商配置（用途：对话 / 向量嵌入），API Key Fernet 加密落库、列表脱敏（`sk-****abcd`）、留空即不改 |
 | 选择优先级 | 会话 Agent 绑定的 LLM → `.env` 全局回退；技能未绑定时不注入工具 |
 
 ## 快速开始
@@ -60,8 +61,9 @@ files:                  # 可选附属文件，随正文一起存储
 | GET | `/api/sessions/{id}/messages` | 历史消息 |
 | POST | `/api/sessions/{id}/chat` | 对话（SSE 流，`data: {json}\n\n`） |
 | POST/GET/DELETE | `/api/skills` (+`/{id}`, `/{id}/versions/{v}`) | 技能上传(multipart)/列表/详情/版本查看/删除 |
-| GET/POST/PUT/DELETE | `/api/llm-configs` (+`/{id}`) | LLM 配置 CRUD（key 仅脱敏返回） |
-| GET/POST/PUT/DELETE | `/api/agents` (+`/{id}`) | Agent CRUD（含 skill_ids[] + config_id 绑定） |
+| GET/POST/PUT/DELETE | `/api/kbs` (+`/{id}`, `/{id}/documents[/{doc_id}]`) | 知识库 CRUD / 文档上传(multipart，自动切块向量化)/文档删除 |
+| GET/POST/PUT/DELETE | `/api/llm-configs` (+`/{id}`) | LLM 配置 CRUD（key 仅脱敏返回；`usage`=chat/embedding） |
+| GET/POST/PUT/DELETE | `/api/agents` (+`/{id}`) | Agent CRUD（含 skill_ids[] + kb_ids[] + config_id 绑定） |
 | GET | `/health` | 健康检查（含 llm_fake 标志） |
 
 ## 配置（环境变量，前缀 `HUTU_`）
@@ -80,8 +82,15 @@ files:                  # 可选附属文件，随正文一起存储
 ## 测试
 
 ```bash
-.venv/Scripts/python -m pytest tests/ -q    # 24 个测试
+.venv/Scripts/python -m pytest tests/ -q    # 33 个测试
 ```
+
+## 知识库（RAG）说明
+
+- 先到 **LLM 配置页** 新建一条 `用途=向量嵌入` 的配置（OpenAI 兼容 embeddings 端点，如 dashscope 的 `text-embedding-v3`）
+- **知识库页** 建库时绑定该配置 → 上传 .md/.txt/.pdf（单文件 2MB），自动切块（~600 字/块，带重叠）并向量化存 SQLite
+- **Agent 管理页** 挂载知识库后，对话中每个知识库是一个检索工具（工具名=库名，非法字符自动 `kb_xxxxxxxx`），检索 top-5 片段，命中过程在工具卡片中可见
+- Agent 挂载的知识库若缺 embedding 配置，对话开头会提示「挂载知识库 … 本轮未生效」，不中断对话
 
 ## 后续路线（按概设）
 

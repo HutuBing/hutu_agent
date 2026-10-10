@@ -82,6 +82,7 @@ def to_dict(cfg: LlmConfig) -> dict:
         "provider": cfg.provider,
         "api_base_url": cfg.api_base_url,
         "model_identifier": cfg.model_identifier,
+        "usage": cfg.usage,
         "api_key_masked": masked,
         "price_per_1k_tokens": cfg.price_per_1k_tokens,
         "quota_limit": cfg.quota_limit,

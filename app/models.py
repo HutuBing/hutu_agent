@@ -109,6 +109,7 @@ class LlmConfig(Base):
     api_base_url: Mapped[str] = mapped_column(String(255), default="")
     api_key_encrypted: Mapped[str] = mapped_column(Text, default="")  # Fernet 密文
     model_identifier: Mapped[str] = mapped_column(String(128), default="")
+    usage: Mapped[str] = mapped_column(String(16), default="chat")  # chat / embedding
     price_per_1k_tokens: Mapped[float] = mapped_column(default=0.0)  # 本期仅存储展示
     quota_limit: Mapped[int] = mapped_column(default=0)  # 0=不限，本期仅存储
     status: Mapped[str] = mapped_column(String(16), default="enabled")  # enabled/disabled
@@ -126,4 +127,55 @@ class AgentLlmRel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     agent_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
     config_id: Mapped[str] = mapped_column(String(36), index=True)
+    create_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_base"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    kb_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    embedding_config_id: Mapped[str] = mapped_column(String(36), default="")  # 绑定的向量化配置
+    creator_user_id: Mapped[str] = mapped_column(String(255), default="")
+    create_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class KbDocument(Base):
+    __tablename__ = "kb_document"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    doc_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    kb_id: Mapped[str] = mapped_column(String(36), index=True)
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    chunk_count: Mapped[int] = mapped_column(default=0)
+    create_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class KbChunk(Base):
+    """知识库切块与向量（向量以 JSON 浮点数组存储，演示规模纯 Python 余弦检索）。"""
+
+    __tablename__ = "kb_chunk"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    kb_id: Mapped[str] = mapped_column(String(36), index=True)
+    doc_id: Mapped[str] = mapped_column(String(36), index=True)
+    seq: Mapped[int] = mapped_column(default=0)  # 块在文档内的序号
+    content: Mapped[str] = mapped_column(Text)
+    vector_json: Mapped[str] = mapped_column(Text, default="")  # JSON float 数组
+
+
+class AgentKbRel(Base):
+    """Agent 挂载知识库的绑定关系。"""
+
+    __tablename__ = "agent_kb_rel"
+    __table_args__ = (UniqueConstraint("agent_id", "kb_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    agent_id: Mapped[str] = mapped_column(String(36), index=True)
+    kb_id: Mapped[str] = mapped_column(String(36), index=True)
     create_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

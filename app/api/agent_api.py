@@ -15,6 +15,7 @@ class AgentReq(BaseModel):
     description: str = ""
     system_prompt: str = ""
     skill_ids: list[str] = []
+    kb_ids: list[str] = []  # 挂载的知识库
     config_id: str | None = None  # None = 全局回退
 
 
@@ -35,7 +36,7 @@ async def create_agent(
     try:
         agent = await agent_service.create_agent(
             db, user.user_id, req.name, req.description, req.system_prompt,
-            req.skill_ids, req.config_id,
+            req.skill_ids, req.config_id, req.kb_ids,
         )
     except agent_service.AgentServiceError as e:
         raise HTTPException(400, str(e))
@@ -66,7 +67,8 @@ async def update_agent(
         raise HTTPException(404, "agent not found")
     try:
         a = await agent_service.update_agent(
-            db, a, req.name, req.description, req.system_prompt, req.skill_ids, req.config_id
+            db, a, req.name, req.description, req.system_prompt,
+            req.skill_ids, req.config_id, req.kb_ids
         )
     except agent_service.AgentServiceError as e:
         raise HTTPException(400, str(e))

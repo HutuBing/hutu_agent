@@ -10,7 +10,7 @@
           :class="{ active: currentId === a.agent_id }" @click="loadForm(a)"
         >
           <div class="t">{{ a.name }}</div>
-          <div class="d">技能 {{ a.skill_names.length }} 个 · 模型 {{ a.llm_name || '全局回退' }}</div>
+          <div class="d">技能 {{ a.skill_names.length }} 个 · 知识库 {{ (a.kb_names || []).length }} 个 · 模型 {{ a.llm_name || '全局回退' }}</div>
         </div>
         <div v-if="!agents.length" class="empty">暂无 Agent</div>
       </div>
@@ -32,6 +32,14 @@
               </el-checkbox>
             </el-checkbox-group>
             <div v-if="!skills.length" class="hint">请先到 Skill 管理页上传技能</div>
+          </el-form-item>
+          <el-form-item label="挂载知识库（对话中可检索其中文档）">
+            <el-checkbox-group v-model="form.kb_ids" class="skill-checks">
+              <el-checkbox v-for="k in kbs" :key="k.kb_id" :value="k.kb_id">
+                {{ k.name }} <span class="hint">{{ (k.description || '').slice(0, 30) || `${k.doc_count} 个文档` }}</span>
+              </el-checkbox>
+            </el-checkbox-group>
+            <div v-if="!kbs.length" class="hint">请先到知识库页创建并上传文档</div>
           </el-form-item>
           <el-form-item label="绑定大模型">
             <el-select v-model="form.config_id" clearable placeholder="全局回退（.env 配置）" style="max-width: 400px">
@@ -55,11 +63,13 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listAgents, createAgent, updateAgent, deleteAgent } from '@/api/agent'
 import { listSkills } from '@/api/skill'
+import { listKbs } from '@/api/kb'
 import { listLlms } from '@/api/llm'
 import { appStore, loadAgents } from '@/stores/app'
 
 const agents = ref([])
 const skills = ref([])
+const kbs = ref([])
 const llms = ref([])
 const currentId = ref('')
 const form = ref(null)
@@ -71,14 +81,14 @@ async function refresh() {
 
 function startCreate() {
   currentId.value = ''
-  form.value = { name: '', description: '', system_prompt: '', skill_ids: [], config_id: null }
+  form.value = { name: '', description: '', system_prompt: '', skill_ids: [], kb_ids: [], config_id: null }
 }
 
 async function loadForm(a) {
   currentId.value = a.agent_id
   form.value = {
     name: a.name, description: a.description, system_prompt: a.system_prompt,
-    skill_ids: [...a.skill_ids], config_id: a.config_id,
+    skill_ids: [...a.skill_ids], kb_ids: [...(a.kb_ids || [])], config_id: a.config_id,
   }
 }
 
@@ -105,6 +115,7 @@ async function remove() {
 onMounted(async () => {
   await refresh()
   skills.value = await listSkills()
+  kbs.value = await listKbs()
   llms.value = await listLlms()
   if (agents.value.length) loadForm(agents.value[0])
   else startCreate()

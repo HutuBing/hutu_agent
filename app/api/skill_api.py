@@ -49,7 +49,7 @@ async def get_skill(
         raise HTTPException(404, "skill not found")
     detail = skill_service.to_dict(s)
     detail["versions"] = [
-        {"version": v.version, "files": json.loads(v.files_json), "create_time": str(v.create_time)}
+        {"version": v.version, "files": json.loads(v.files_json)}
         for v in await skill_service.list_versions(db, skill_id)
     ]
     return detail

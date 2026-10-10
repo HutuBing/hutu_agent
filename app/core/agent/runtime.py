@@ -3,6 +3,7 @@
 DB 解析在请求作用域完成；事件流阶段只使用纯内存对象（与 chat_service 的既有模式一致）。
 """
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -18,6 +19,9 @@ from app.core.llm.crypto import EncryptionKeyError, decrypt_api_key
 from app.models import LlmConfig, Skill
 
 logger = logging.getLogger(__name__)
+
+# 工具名约束（与技能名一致：LangChain/OpenAI function-calling 可用名）
+_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 @dataclass
@@ -38,12 +42,23 @@ class SkillInfo:
 
 
 @dataclass
+class KbInfo:
+    kb_id: str
+    name: str
+    description: str
+    tool_name: str  # KB 名合法则用之，否则 kb_{kb_id[:8]}
+    emb: LlmSpec | None = None  # 检索用的 embedding 配置
+
+
+@dataclass
 class AgentChatContext:
     agent_id: str
     system_prompt: str
     llm: LlmSpec | None = None
     skills: list[SkillInfo] = field(default_factory=list)
     skipped_skills: list[str] = field(default_factory=list)  # 读盘失败被跳过的技能名
+    kbs: list[KbInfo] = field(default_factory=list)
+    skipped_kbs: list[str] = field(default_factory=list)  # embedding 配置缺失被跳过的知识库名
 
 
 async def resolve_agent_context(db: AsyncSession, agent_id: str) -> AgentChatContext | None:
@@ -95,6 +110,31 @@ async def resolve_agent_context(db: AsyncSession, agent_id: str) -> AgentChatCon
         ctx.skills.append(SkillInfo(
             name=skill.name, description=skill.description, body=meta.body,
             skill_id=skill.skill_id, version=skill.latest_version, has_handler=has_handler,
+        ))
+
+    # Kbs：绑定的知识库 → 解析各自 embedding 配置；缺失/停用进 skipped_kbs，不炸对话
+    from app.core.kb import kb_service
+    from app.models import KnowledgeBase
+
+    for kid in await agent_service.get_bound_kb_ids(db, agent.agent_id):
+        kb = (
+            await db.execute(select(KnowledgeBase).where(KnowledgeBase.kb_id == kid))
+        ).scalar_one_or_none()
+        if kb is None:
+            continue
+        try:
+            emb = await kb_service.get_embedding_spec(db, kb)
+        except Exception:  # noqa: BLE001 — 解析异常按配置缺失处理
+            logger.warning("知识库 %s embedding 配置解析失败", kid, exc_info=True)
+            emb = None
+        if emb is None:
+            logger.warning("知识库 %s（%s）无可用的 embedding 配置，跳过挂载", kb.name, kid)
+            ctx.skipped_kbs.append(kb.name)
+            continue
+        tool_name = kb.name if _TOOL_NAME_RE.match(kb.name) else f"kb_{kb.kb_id[:8]}"
+        ctx.kbs.append(KbInfo(
+            kb_id=kb.kb_id, name=kb.name, description=kb.description,
+            tool_name=tool_name, emb=emb,
         ))
 
     return ctx
@@ -174,6 +214,49 @@ def build_skill_tools(ctx: AgentChatContext, llm: ChatOpenAI) -> list[Structured
                 name=sk.name,
                 description=f"{sk.description}\n\n当用户任务匹配该技能时调用。",
                 args_schema=_SkillArgs,
+            )
+        )
+    return tools
+
+
+class _KbQueryArgs(BaseModel):
+    query: str = Field(description="要检索的问题或关键词")
+
+
+def build_kb_tools(ctx: AgentChatContext) -> list[StructuredTool]:
+    """每个挂载的知识库 = 一个检索工具（余弦 top-k，结果带文档来源）。"""
+    from app.core.kb import kb_service
+
+    tools = []
+    for kb in ctx.kbs:
+        async def _run(query: str, _kb=kb) -> str:
+            from app.db import get_engine
+
+            # 事件流阶段不持有请求 session，检索用短生命周期会话
+            from sqlalchemy.ext.asyncio import async_sessionmaker
+
+            try:
+                async with async_sessionmaker(get_engine(), expire_on_commit=False)() as db:
+                    results = await kb_service.search_kb(db, _kb.kb_id, query)
+            except Exception as e:  # noqa: BLE001 — 检索失败不炸对话
+                logger.warning("知识库 %s 检索失败: %s", _kb.name, e)
+                return f"（知识库检索失败: {e}）"
+            if not results:
+                return "（知识库中未找到相关内容）"
+            parts = []
+            for r in results:
+                parts.append(f"[{_kb.name} · 块#{r['seq']} · 相关度{r['score']}]\n{r['content']}")
+            return "\n\n".join(parts)
+
+        tools.append(
+            StructuredTool.from_function(
+                coroutine=_run,
+                name=kb.tool_name,
+                description=(
+                    f"知识库检索：{kb.description or kb.name}\n"
+                    f"当用户问题可能需要该知识库中的资料时调用，入参为检索问题或关键词。"
+                ),
+                args_schema=_KbQueryArgs,
             )
         )
     return tools

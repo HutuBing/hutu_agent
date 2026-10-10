@@ -17,6 +17,7 @@ class LlmConfigReq(BaseModel):
     api_base_url: str = ""
     api_key: str = ""  # create 必填；update 留空 = 不修改
     model_identifier: str = ""
+    usage: str = "chat"  # chat=对话模型 / embedding=向量化模型
     price_per_1k_tokens: float = 0.0
     quota_limit: int = 0
     status: str = "enabled"

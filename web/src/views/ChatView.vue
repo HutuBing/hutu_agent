@@ -1,9 +1,6 @@
 <template>
   <div class="chat-page">
     <aside class="sidebar">
-      <div class="brand-row">
-        <span class="brand">🤖 hutu_agent</span>
-      </div>
       <el-button class="new-btn" type="primary" plain @click="showNew = true">＋ 新建会话</el-button>
       <div class="session-list">
         <div
@@ -212,9 +209,7 @@ onMounted(async () => {
   width: 264px; background: #1e272e; color: #d2dae2;
   display: flex; flex-direction: column; flex-shrink: 0;
 }
-.brand-row { padding: 18px 18px 12px; }
-.brand { color: #fff; font-size: 16px; font-weight: 700; }
-.new-btn { margin: 0 16px 12px; width: auto; }
+.new-btn { margin: 16px 16px 12px; width: auto; }
 .session-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
 .session-item {
   padding: 10px 12px; border-radius: 8px; font-size: 13px; cursor: pointer;
